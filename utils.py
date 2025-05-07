@@ -44,8 +44,8 @@ def look_up_embedding(token, idx_dict_path, embeddings_path):
 if __name__ == "__main__":
     train = load_dataset("stanfordnlp/sst2", split="train")
     word2vec = gensim.downloader.load("word2vec-google-news-300")
-    idx_path = "embeddings/embedding_idx.pkl"
-    embeddings_path = "embeddings/embeddings.pt"
+    idx_path = "word_to_idx.pkl"
+    embeddings_path = "embeddings.pt"
     save_embeddings(train, word2vec, idx_path, embeddings_path)
 
 

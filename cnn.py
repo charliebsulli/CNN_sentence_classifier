@@ -122,10 +122,10 @@ if __name__ == "__main__":
 
 
     # get saved embeddings
-    embeddings = torch.load("embeddings/embeddings.pt")
+    embeddings = torch.load("embeddings.pt")
 
     # get word to index dict
-    with open("embeddings/embedding_idx.pkl", mode="rb") as file:
+    with open("word_to_idx.pkl", mode="rb") as file:
         word_to_idx = pickle.load(file)
 
     # train_dataloader = DataLoader(train_set, batch_size=1) # later add capability to model for bigger batches

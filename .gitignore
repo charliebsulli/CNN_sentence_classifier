@@ -1,2 +1,4 @@
 /env/
 .idea/
+embeddings.pt
+word_to_idx.pkl
