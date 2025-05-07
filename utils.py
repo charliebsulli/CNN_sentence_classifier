@@ -47,7 +47,5 @@ if __name__ == "__main__":
     idx_path = "embeddings/embedding_idx.pkl"
     embeddings_path = "embeddings/embeddings.pt"
     save_embeddings(train, word2vec, idx_path, embeddings_path)
-    print(look_up_embedding("the", idx_path, embeddings_path))
-
 
 
