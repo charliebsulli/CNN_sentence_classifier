@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 
 from tqdm import tqdm
 
+UNK_TOKEN = "unk"
 
 class Convolution(nn.Module):
     def __init__(self, window_size, num_filters, embeddings_size):
@@ -96,21 +97,19 @@ def evaluate(dataloader, model):
     return correct / total
 
 
-# this means my approach to unknown tokens is to map them all to the same token
-# in order to do this, need to initialize a random unk embedding
-# when I create the embeddings
 def preprocess(sample, word_to_idx):
     toks = sample["sentence"].split(" ")
-    sample["sentence"] = [word_to_idx.get(tok, word_to_idx["the"]) for tok in toks] # TODO update unk token
+    sample["sentence"] = [word_to_idx.get(tok, word_to_idx[UNK_TOKEN]) for tok in toks]
     return sample
 
 
 if __name__ == "__main__":
 
-    # get saved word to index mapping
     # TODO if it does not exist, create it
-    with open("word_to_idx.pkl", mode="rb") as file:
-        word_to_idx = pickle.load(file)
+    with open("embeddings.pt", mode="rb") as file:
+        embeddings_dict = torch.load(file)
+    word_to_idx = embeddings_dict["vocab"]
+    embeddings = embeddings_dict["embeddings"]
 
     # load SST-2 dataset, mapping sentences to indices TODO can parallelize mapping
     train = load_dataset("stanfordnlp/sst2", split="train").map(lambda sample: preprocess(sample, word_to_idx))
@@ -121,9 +120,6 @@ if __name__ == "__main__":
     dev.set_format(type="torch")
     dev_loader = DataLoader(dev, batch_size=1)
     # test = load_dataset("stanfordnlp/sst2", split="test")
-
-    # get saved embeddings
-    embeddings = torch.load("embeddings.pt")
 
     cnn = CNN(embeddings)
 
