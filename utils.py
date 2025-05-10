@@ -1,8 +1,4 @@
-import os.path
-import pickle
-
 import gensim.downloader
-import numpy as np
 import torch
 from datasets import load_dataset
 
