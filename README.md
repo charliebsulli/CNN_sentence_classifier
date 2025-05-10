@@ -4,4 +4,4 @@
 3. Run utils.py to save embeddings and create a mapping from tokens to indices
 4. Run cnn.py to train and evaluate the model - should take minutes
 
-Accuracy on SST-2 dev: 82.45
+Accuracy on SST-2 dev: ~82.45

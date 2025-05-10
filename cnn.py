@@ -71,72 +71,67 @@ class CNN(nn.Module):
         return probs
 
 
-def train(dataset, model, loss_fn, optimizer, word_to_idx):
+def training_loop(dataloader, model, loss_fn, optimizer):
     model.train()
-    for i, sample in tqdm(enumerate(dataset), total=len(dataset)): # is there some kind of batched way to perform this lookup?
-        # process the sample
-        X, y = process_sample(sample)
+    print(next(iter(dataloader)))
+    for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
+        pred = model(batch['sentence'])
+        loss = loss_fn(pred, batch['label'][0]) # dim of input must be 1 greater than dim of target
 
-        pred = model(X) # pass through model
-        loss = loss_fn(pred, torch.tensor(y))
-
-        # backprop
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
 
 
-def evaluate(dataset, model, word_to_idx):
+def evaluate(dataloader, model):
     model.eval()
     correct = 0
-    total = len(dataset)
+    total = len(dataloader) # keep batch size to 1
     with torch.no_grad():
-        for i, sample in tqdm(enumerate(dataset), total=len(dataset)):
-            X, y = process_sample(sample)
-            pred = np.argmax(model(X))
-            if pred == y:
+        for i, sample in tqdm(enumerate(dataloader), total=len(dataloader)):
+            pred = np.argmax(model(sample['sentence']))
+            if pred == sample['label'][0]:
                 correct += 1
 
     return correct / total
 
 
-def process_sample(sample):
-    # translates the sentence from the SST2 dataset into indices, saves class label
-    tokens = sample["sentence"].split(" ")
-    X = []
-    for token in tokens:
-        if token in word_to_idx:
-            X.append(word_to_idx[token])
-        else:
-            X.append(0) # just a hack to test training loop, fix how I am loading the data
-    y = sample['label']
-
-    return torch.tensor(X), y
+# this means my approach to unknown tokens is to map them all to the same token
+# in order to do this, need to initialize a random unk embedding
+# when I create the embeddings
+def preprocess(sample, word_to_idx):
+    toks = sample["sentence"].split(" ")
+    sample["sentence"] = [word_to_idx.get(tok, word_to_idx["the"]) for tok in toks] # TODO update unk token
+    return sample
 
 
 if __name__ == "__main__":
-    # load SST-2 dataset
-    train_set = load_dataset("stanfordnlp/sst2", split="train")
-    dev = load_dataset("stanfordnlp/sst2", split="validation")
-    test = load_dataset("stanfordnlp/sst2", split="test")
 
-
-    # get saved embeddings
-    embeddings = torch.load("embeddings.pt")
-
-    # get word to index dict
+    # get saved word to index mapping
+    # TODO if it does not exist, create it
     with open("word_to_idx.pkl", mode="rb") as file:
         word_to_idx = pickle.load(file)
 
-    # train_dataloader = DataLoader(train_set, batch_size=1) # later add capability to model for bigger batches
+    # load SST-2 dataset, mapping sentences to indices TODO can parallelize mapping
+    train = load_dataset("stanfordnlp/sst2", split="train").map(lambda sample: preprocess(sample, word_to_idx))
+    train.set_format(type="torch")
+    train_loader = DataLoader(train, batch_size=1) # TODO update batch size
+
+    dev = load_dataset("stanfordnlp/sst2", split="validation").map(lambda sample: preprocess(sample, word_to_idx))
+    dev.set_format(type="torch")
+    dev_loader = DataLoader(dev, batch_size=1)
+    # test = load_dataset("stanfordnlp/sst2", split="test")
+
+    # get saved embeddings
+    embeddings = torch.load("embeddings.pt")
 
     cnn = CNN(embeddings)
 
     loss = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adadelta(cnn.parameters()) # TODO hyperparams
 
-    train(train_set, cnn, loss, optimizer, word_to_idx)
+    training_loop(train_loader, cnn, loss, optimizer)
 
-    dev_acc = evaluate(dev, cnn, word_to_idx)
+    dev_acc = evaluate(dev_loader, cnn)
 
     print(f"Dev set accuracy: {dev_acc}")
