@@ -1,3 +1,4 @@
 /env/
 .idea/
 embeddings.pt
+__pycache__/
