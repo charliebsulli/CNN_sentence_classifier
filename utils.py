@@ -2,15 +2,16 @@ import gensim.downloader
 import torch
 from datasets import load_dataset
 
-from cnn import UNK_TOKEN
+from cnn import UNK_TOKEN, PADDING_TOKEN
 
 
 def get_vocab(dataset):
     vocab = set()
     for sample in dataset:
         vocab.update(sample["sentence"].split(" "))
-    vocab_dict = {tok: i+1 for i, tok in enumerate(vocab)}
-    vocab_dict[UNK_TOKEN] = 0
+    vocab_dict = {tok: i+2 for i, tok in enumerate(vocab)}
+    vocab_dict[PADDING_TOKEN] = 0
+    vocab_dict[UNK_TOKEN] = 1
     return vocab_dict
 
 

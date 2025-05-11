@@ -1,5 +1,3 @@
-import pickle
-
 from datasets import load_dataset
 import torch
 from torch import nn
@@ -8,44 +6,39 @@ from torch.utils.data import DataLoader
 
 from tqdm import tqdm
 
-UNK_TOKEN = "unk"
+UNK_TOKEN = "<unk>"
+PADDING_TOKEN = "<pad>"
 
 class Convolution(nn.Module):
     def __init__(self, window_size, num_filters, embeddings_size):
         super(Convolution, self).__init__()
         self.window_size = window_size
         self.embeddings_size = embeddings_size
-        self.flatten = nn.Flatten(0, -1) # TODO change once batch sizes implemented
+        self.flatten = nn.Flatten()
         self.filter = nn.Linear(self.window_size * self.embeddings_size, num_filters)
         self.relu = nn.ReLU()
 
     def forward(self, input_seq):
         # concatenate vectors in input_seq
-        sentence = self.flatten(input_seq)
+        sentences = self.flatten(input_seq)
         window = self.window_size * self.embeddings_size
 
-        # equivalent to adding a word to each end of the sentence until long enough for
-        # an application of the filter
-        # TODO may need to make this more precise
-        while len(sentence) < window:
-            sentence = nn.functional.pad(sentence, (self.embeddings_size, self.embeddings_size))
-
-        # create matrix of segments of the sentence
+        # create tensor of segments of the sentence
         slices = []
-        # steps one word at a time over the rest of the sentence
-        for i in np.arange(0, len(sentence) + self.embeddings_size - window, self.embeddings_size):
-            next_slice = sentence[i:i+window]
+        for i in np.arange(0, len(sentences[0]) + self.embeddings_size - window, self.embeddings_size):
+            next_slice = sentences[:, i:i+window]
             slices.append(next_slice)
-        slices = torch.stack(slices).float()
-        feature_map = torch.transpose(self.relu(self.filter(slices)), 0, 1)
+        slices = torch.stack(slices, dim=1).float()
 
-        return feature_map # a stack of (num_filters) feature maps
+        feature_map = torch.transpose(self.relu(self.filter(slices)), 1, 2)
+
+        return feature_map # a stack of (num_filters) feature maps for each batch
 
 
 class CNN(nn.Module):
-    def __init__(self, embeddings):
+    def __init__(self, embeddings, padding_idx):
         super(CNN, self).__init__()
-        self.embeddings = nn.Embedding.from_pretrained(embeddings)
+        self.embeddings = nn.Embedding.from_pretrained(embeddings, padding_idx=padding_idx)
         self.conv3 = Convolution(3, 100, 300)
         self.conv4 = Convolution(4, 100, 300)
         self.conv5 = Convolution(5, 100, 300)
@@ -59,12 +52,12 @@ class CNN(nn.Module):
         embedded = self.embeddings(input_seq)
 
         # compute + max-pool feature maps
-        three_feats = torch.max(self.conv3(embedded), 1).values
-        four_feats = torch.max(self.conv4(embedded), 1).values
-        five_feats = torch.max(self.conv5(embedded), 1).values
+        three_feats = torch.max(self.conv3(embedded), -1).values
+        four_feats = torch.max(self.conv4(embedded), -1).values
+        five_feats = torch.max(self.conv5(embedded), -1).values
 
         # concatenate features
-        features = torch.cat((three_feats, four_feats, five_feats), 0)
+        features = torch.cat((three_feats, four_feats, five_feats), 1)
 
         # softmax layer
         probs = self.softmax_layer(features)
@@ -74,10 +67,9 @@ class CNN(nn.Module):
 
 def training_loop(dataloader, model, loss_fn, optimizer):
     model.train()
-    print(next(iter(dataloader)))
     for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
         pred = model(batch['sentence'])
-        loss = loss_fn(pred, batch['label'][0]) # dim of input must be 1 greater than dim of target
+        loss = loss_fn(pred, batch['label']) # dim of input must be 1 greater than dim of target
 
         loss.backward()
         optimizer.step()
@@ -87,12 +79,14 @@ def training_loop(dataloader, model, loss_fn, optimizer):
 def evaluate(dataloader, model):
     model.eval()
     correct = 0
-    total = len(dataloader) # keep batch size to 1
+    total = 0
     with torch.no_grad():
-        for i, sample in tqdm(enumerate(dataloader), total=len(dataloader)):
-            pred = np.argmax(model(sample['sentence']))
-            if pred == sample['label'][0]:
-                correct += 1
+        for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
+            pred = np.argmax(model(batch['sentence']), axis=1)
+            for gold_label, pred_label in zip(batch['label'], pred):
+                if gold_label == pred_label:
+                    correct += 1
+                total += 1
 
     return correct / total
 
@@ -103,6 +97,20 @@ def preprocess(sample, word_to_idx):
     return sample
 
 
+def pad(batch, min_length, padding_idx):
+    idx = torch.tensor([sample["idx"] for sample in batch])
+
+    sentences = [sample["sentence"] for sample in batch]
+    max_len = max(sample.size(0) for sample in sentences)
+    if max_len < min_length: # sentence must be at least the length of the longest filter
+        max_len = min_length
+    sentences = torch.stack([nn.functional.pad(sample, (0, max_len - sample.size(0)), value=padding_idx) for sample in sentences])
+
+    labels = torch.tensor([sample["label"] for sample in batch])
+
+    return {'idx': idx, 'sentence': sentences, 'label': labels}
+
+
 if __name__ == "__main__":
 
     # TODO if it does not exist, create it
@@ -111,17 +119,18 @@ if __name__ == "__main__":
     word_to_idx = embeddings_dict["vocab"]
     embeddings = embeddings_dict["embeddings"]
 
+    padding_fn = lambda b: pad(b, 5, word_to_idx[PADDING_TOKEN])
     # load SST-2 dataset, mapping sentences to indices TODO can parallelize mapping
     train = load_dataset("stanfordnlp/sst2", split="train").map(lambda sample: preprocess(sample, word_to_idx))
     train.set_format(type="torch")
-    train_loader = DataLoader(train, batch_size=1) # TODO update batch size
+    train_loader = DataLoader(train, batch_size=50, collate_fn=padding_fn)
 
     dev = load_dataset("stanfordnlp/sst2", split="validation").map(lambda sample: preprocess(sample, word_to_idx))
     dev.set_format(type="torch")
-    dev_loader = DataLoader(dev, batch_size=1)
+    dev_loader = DataLoader(dev, batch_size=10, collate_fn=padding_fn)
     # test = load_dataset("stanfordnlp/sst2", split="test")
 
-    cnn = CNN(embeddings)
+    cnn = CNN(embeddings, padding_idx=word_to_idx[PADDING_TOKEN])
 
     loss = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adadelta(cnn.parameters()) # TODO hyperparams
