@@ -108,7 +108,6 @@ def preprocess(sample, text_field, word_to_idx, delim=" "):
 
 
 def pad(batch, text_field, label_field, min_length, padding_idx):
-    # idx = torch.tensor([sample["idx"] for sample in batch])
 
     sentences = [sample[text_field] for sample in batch]
     max_len = max(sample.size(0) for sample in sentences)
