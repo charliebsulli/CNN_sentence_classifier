@@ -7,7 +7,6 @@ from utils import get_trec_splits, UNK_TOKEN, PADDING_TOKEN
 from tqdm import tqdm
 
 
-
 class CNN(nn.Module):
     def __init__(self, embeddings, padding_idx, num_classes):
         super(CNN, self).__init__()
@@ -44,9 +43,11 @@ class CNN(nn.Module):
 
 def training_loop(train_dataloader, dev_dataloader, model, loss_fn, optimizer, lambd, epochs):
     model.train()
+    device = next(model.parameters()).device
     best_dev_acc = 0
     for e in range(epochs):
         for i, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
+            batch = {k: v.to(device) for k, v in batch.items()}
             pred = model(batch['sentence'])
             loss = loss_fn(pred, batch['label']) # dim of input must be 1 greater than dim of target
 
@@ -83,10 +84,12 @@ def evaluate(dataloader, model, load_best = False):
         print("Loading best model...")
         model.load_state_dict(torch.load('best_model.pt', weights_only=True))
     model.eval()
+    device = next(model.parameters()).device
     correct = 0
     total = 0
     with torch.no_grad():
         for i, batch in enumerate(dataloader):
+            batch = {k: v.to(device) for k, v in batch.items()}
             logits = model(batch['sentence'])
             probs = torch.softmax(logits, dim=1)
             pred = torch.argmax(probs, dim=1)
@@ -118,8 +121,9 @@ def pad(batch, text_field, label_field, min_length, padding_idx):
     return {'sentence': sentences, 'label': labels}
 
 
-if __name__ == "__main__":
+def main():
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     with open("embeddings.pt", mode="rb") as file:
         embeddings_dict = torch.load(file)
     word_to_idx = embeddings_dict["vocab"]
@@ -128,7 +132,7 @@ if __name__ == "__main__":
     train, dev, test = get_trec_splits()
 
     mapping_fn = lambda sample: preprocess(sample, "text", word_to_idx)
-    padding_fn = lambda b: pad(b, "text", "coarse_label",5, word_to_idx[PADDING_TOKEN])
+    padding_fn = lambda b: pad(b, "text", "coarse_label", 5, word_to_idx[PADDING_TOKEN])
 
     train = train.map(mapping_fn)
     train.set_format(type="torch")
@@ -142,13 +146,16 @@ if __name__ == "__main__":
     test.set_format(type="torch")
     test_loader = DataLoader(test, batch_size=10, collate_fn=padding_fn)
 
-    cnn = CNN(embeddings, padding_idx=word_to_idx[PADDING_TOKEN], num_classes=6)
+    cnn = CNN(embeddings, padding_idx=word_to_idx[PADDING_TOKEN], num_classes=6).to(device)
 
     loss = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adadelta(cnn.parameters())
 
-    training_loop(train_loader, dev_loader, cnn, loss, optimizer, 3, 1)
+    training_loop(train_loader, dev_loader, cnn, loss, optimizer, 3, 25)
 
     test_acc = evaluate(test_loader, cnn, load_best=True)
 
     print(f"Test set accuracy: {test_acc}")
+
+if __name__ == "__main__":
+    main()
