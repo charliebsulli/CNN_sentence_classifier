@@ -64,7 +64,7 @@ class CNN(nn.Module):
         return probs
 
 
-def training_loop(dataloader, model, loss_fn, optimizer):
+def training_loop(dataloader, model, loss_fn, optimizer, lambd):
     model.train()
     for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
         pred = model(batch['sentence'])
@@ -73,6 +73,20 @@ def training_loop(dataloader, model, loss_fn, optimizer):
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
+
+        # regularization
+        with torch.no_grad():
+            new_weights = []
+            for w in model.linear.weight.data:
+                norm = torch.linalg.norm(w)
+                if norm > lambd/2:
+                    # rescale w by (lambda/2) / norm
+                    new_w = ((lambd/2) / norm) * w
+                    new_weights.append(new_w)
+                else:
+                    new_weights.append(w)
+            ws = torch.stack(new_weights)
+            model.linear.weight.data = ws
 
 
 def evaluate(dataloader, model):
@@ -122,7 +136,7 @@ if __name__ == "__main__":
     # load SST-2 dataset, mapping sentences to indices TODO can parallelize mapping
     train = load_dataset("stanfordnlp/sst2", split="train").map(lambda sample: preprocess(sample, word_to_idx))
     train.set_format(type="torch")
-    train_loader = DataLoader(train, batch_size=50, collate_fn=padding_fn)
+    train_loader = DataLoader(train, shuffle=True, batch_size=50, collate_fn=padding_fn)
 
     dev = load_dataset("stanfordnlp/sst2", split="validation").map(lambda sample: preprocess(sample, word_to_idx))
     dev.set_format(type="torch")
@@ -134,7 +148,7 @@ if __name__ == "__main__":
     loss = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adadelta(cnn.parameters()) # TODO hyperparams
 
-    training_loop(train_loader, cnn, loss, optimizer)
+    training_loop(train_loader, cnn, loss, optimizer, 3)
 
     dev_acc = evaluate(dev_loader, cnn)
 
