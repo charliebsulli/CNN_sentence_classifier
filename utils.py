@@ -31,9 +31,9 @@ def get_trec_splits():
     """
     Return splits of the TREC dataset. Samples 10% of train to make a dev set.
     """
-    train = load_dataset("CogComp/trec", split="train")
+    train = load_dataset("CogComp/trec", split="train", trust_remote_code=True)
     train_dev_split = train.train_test_split(test_size=0.1, shuffle=True, seed=2)
-    test = load_dataset("CogComp/trec", split = "test")
+    test = load_dataset("CogComp/trec", split = "test", trust_remote_code=True)
 
     return train_dev_split["train"], train_dev_split["test"], test
 
