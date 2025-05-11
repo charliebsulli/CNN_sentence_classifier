@@ -16,12 +16,13 @@ def get_vocab(dataset):
 
 
 def get_embeddings(vocab, model, embeddings_size):
-    embeddings = torch.zeros((len(vocab), embeddings_size))
+    embeddings = torch.rand((len(vocab), embeddings_size))
     for tok, idx in vocab.items():
         try:
             embeddings[idx] = torch.tensor(model[tok])
         except KeyError: # OOV embedding
             pass
+    embeddings[vocab[PADDING_TOKEN]] = torch.zeros(embeddings_size)
     return embeddings
 
 
