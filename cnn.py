@@ -39,29 +39,44 @@ class CNN(nn.Module):
     def __init__(self, embeddings, padding_idx):
         super(CNN, self).__init__()
         self.embeddings = nn.Embedding.from_pretrained(embeddings, padding_idx=padding_idx)
-        self.conv3 = Convolution(3, 100, 300)
-        self.conv4 = Convolution(4, 100, 300)
-        self.conv5 = Convolution(5, 100, 300)
+        self.embeddings_size = len(embeddings[0])
+        self.conv3 = Convolution(3, 100, self.embeddings_size) # TODO try nn.Conv1d
+        self.conv4 = Convolution(4, 100, self.embeddings_size)
+        self.conv5 = Convolution(5, 100, self.embeddings_size)
+
+        self.convs = nn.ModuleList([
+            nn.Conv1d(in_channels=self.embeddings_size, out_channels=100, kernel_size=k) for k in [3, 4, 5]
+        ])
+        self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.5)
         self.linear = nn.Linear(300, 2)
-        self.softmax = nn.Softmax()
+        # self.softmax = nn.Softmax()
 
     def forward(self, input_seq):
         # embed input sequence
         embedded = self.embeddings(input_seq)
+        embedded = torch.transpose(embedded, dim0=1, dim1=2) # in-channels should be dimension after batch
+
+        # convolution layer
+        feature_map = [self.relu(conv(embedded)) for conv in self.convs]
+
+        # max pooling
+        # shape depends on sequence length + filter size, so we call it as needed
+        pooled_features = [torch.squeeze(torch.nn.functional.max_pool1d(feats, feats.shape[2]), dim=2) for feats in feature_map]
+
 
         # compute + max-pool feature maps
-        three_feats = torch.max(self.conv3(embedded), -1).values
-        four_feats = torch.max(self.conv4(embedded), -1).values
-        five_feats = torch.max(self.conv5(embedded), -1).values
+        # three_feats = torch.max(self.conv3(embedded), -1).values
+        # four_feats = torch.max(self.conv4(embedded), -1).values
+        # five_feats = torch.max(self.conv5(embedded), -1).values
 
         # concatenate features
-        features = torch.cat((three_feats, four_feats, five_feats), 1)
+        features = torch.cat(pooled_features, 1)
 
         # softmax layer
-        probs = self.softmax(self.linear(self.dropout(features)))
+        logits = self.linear(self.dropout(features))
 
-        return probs
+        return logits
 
 
 def training_loop(train_dataloader, dev_dataloader, model, loss_fn, optimizer, lambd):
@@ -90,7 +105,7 @@ def training_loop(train_dataloader, dev_dataloader, model, loss_fn, optimizer, l
             model.linear.weight.data = ws
 
         # checkpointing
-        if i % 50 == 0:
+        if i % 100 == 0:
             print(f"Batch: {i}")
             dev_acc = evaluate(dev_dataloader, model)
             print(f"Dev set accuracy: {dev_acc}")
@@ -98,6 +113,7 @@ def training_loop(train_dataloader, dev_dataloader, model, loss_fn, optimizer, l
                 print("Saving new best model...")
                 torch.save(model.state_dict(), "best_model.pt")
                 best_dev_acc = dev_acc
+
 
 def evaluate(dataloader, model, load_best = False):
     if load_best:
@@ -108,7 +124,9 @@ def evaluate(dataloader, model, load_best = False):
     total = 0
     with torch.no_grad():
         for i, batch in enumerate(dataloader):
-            pred = np.argmax(model(batch['sentence']), axis=1)
+            logits = model(batch['sentence'])
+            probs = torch.softmax(logits, dim=1)
+            pred = torch.argmax(probs, dim=1)
             for gold_label, pred_label in zip(batch['label'], pred):
                 if gold_label == pred_label:
                     correct += 1
@@ -139,14 +157,13 @@ def pad(batch, min_length, padding_idx):
 
 if __name__ == "__main__":
 
-    # TODO if it does not exist, create it
     with open("embeddings.pt", mode="rb") as file:
         embeddings_dict = torch.load(file)
     word_to_idx = embeddings_dict["vocab"]
     embeddings = embeddings_dict["embeddings"]
 
     padding_fn = lambda b: pad(b, 5, word_to_idx[PADDING_TOKEN])
-    # load SST-2 dataset, mapping sentences to indices TODO can parallelize mapping
+    # load SST-2 dataset, mapping tokens in sentences to indices
     train = load_dataset("stanfordnlp/sst2", split="train").map(lambda sample: preprocess(sample, word_to_idx))
     train.set_format(type="torch")
     train_loader = DataLoader(train, shuffle=True, batch_size=50, collate_fn=padding_fn)
@@ -154,7 +171,10 @@ if __name__ == "__main__":
     dev = load_dataset("stanfordnlp/sst2", split="validation").map(lambda sample: preprocess(sample, word_to_idx))
     dev.set_format(type="torch")
     dev_loader = DataLoader(dev, batch_size=10, collate_fn=padding_fn)
-    # test = load_dataset("stanfordnlp/sst2", split="test")
+
+    # test = load_dataset("stanfordnlp/sst2", split="test").map(lambda sample: preprocess(sample, word_to_idx))
+    # test.set_format(type="torch")
+    # test_loader = DataLoader(test, batch_size=10, collate_fn=padding_fn)
 
     cnn = CNN(embeddings, padding_idx=word_to_idx[PADDING_TOKEN])
 
@@ -165,4 +185,4 @@ if __name__ == "__main__":
 
     dev_acc = evaluate(dev_loader, cnn, load_best=True)
 
-    print(f"Best dev set accuracy: {dev_acc}")
+    print(f"Dev set accuracy: {dev_acc}")
