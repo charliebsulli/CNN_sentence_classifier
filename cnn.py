@@ -64,9 +64,10 @@ class CNN(nn.Module):
         return probs
 
 
-def training_loop(dataloader, model, loss_fn, optimizer, lambd):
+def training_loop(train_dataloader, dev_dataloader, model, loss_fn, optimizer, lambd):
     model.train()
-    for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
+    best_dev_acc = 0
+    for i, batch in enumerate(train_dataloader):
         pred = model(batch['sentence'])
         loss = loss_fn(pred, batch['label']) # dim of input must be 1 greater than dim of target
 
@@ -88,13 +89,25 @@ def training_loop(dataloader, model, loss_fn, optimizer, lambd):
             ws = torch.stack(new_weights)
             model.linear.weight.data = ws
 
+        # checkpointing
+        if i % 50 == 0:
+            print(f"Batch: {i}")
+            dev_acc = evaluate(dev_dataloader, model)
+            print(f"Dev set accuracy: {dev_acc}")
+            if dev_acc > best_dev_acc:
+                print("Saving new best model...")
+                torch.save(model.state_dict(), "best_model.pt")
+                best_dev_acc = dev_acc
 
-def evaluate(dataloader, model):
+def evaluate(dataloader, model, load_best = False):
+    if load_best:
+        print("Loading best model...")
+        model.load_state_dict(torch.load('best_model.pt', weights_only=True))
     model.eval()
     correct = 0
     total = 0
     with torch.no_grad():
-        for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
+        for i, batch in enumerate(dataloader):
             pred = np.argmax(model(batch['sentence']), axis=1)
             for gold_label, pred_label in zip(batch['label'], pred):
                 if gold_label == pred_label:
@@ -148,8 +161,8 @@ if __name__ == "__main__":
     loss = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adadelta(cnn.parameters()) # TODO hyperparams
 
-    training_loop(train_loader, cnn, loss, optimizer, 3)
+    training_loop(train_loader, dev_loader, cnn, loss, optimizer, 3)
 
-    dev_acc = evaluate(dev_loader, cnn)
+    dev_acc = evaluate(dev_loader, cnn, load_best=True)
 
-    print(f"Dev set accuracy: {dev_acc}")
+    print(f"Best dev set accuracy: {dev_acc}")

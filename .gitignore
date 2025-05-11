@@ -2,3 +2,4 @@
 .idea/
 embeddings.pt
 __pycache__/
+best_model.pt
