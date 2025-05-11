@@ -27,7 +27,6 @@ Accuracy on [TREC](https://huggingface.co/datasets/CogComp/trec): 90.20
         year = {2014},
         keywords = {read},
         pages = {1746--1751},
-        file = {Full Text PDF:/Users/charliesullivan/Zotero/storage/VNGI84Q9/Kim - 2014 - Convolutional Neural Networks for Sentence Classification.pdf:application/pdf},
     }
 
     @inproceedings{li-roth-2002-learning,
