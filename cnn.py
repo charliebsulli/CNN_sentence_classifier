@@ -42,10 +42,9 @@ class CNN(nn.Module):
         self.conv3 = Convolution(3, 100, 300)
         self.conv4 = Convolution(4, 100, 300)
         self.conv5 = Convolution(5, 100, 300)
-        self.softmax_layer = nn.Sequential(
-            nn.Linear(300, 2),
-            nn.Softmax()
-        )
+        self.dropout = nn.Dropout(p=0.5)
+        self.linear = nn.Linear(300, 2)
+        self.softmax = nn.Softmax()
 
     def forward(self, input_seq):
         # embed input sequence
@@ -60,7 +59,7 @@ class CNN(nn.Module):
         features = torch.cat((three_feats, four_feats, five_feats), 1)
 
         # softmax layer
-        probs = self.softmax_layer(features)
+        probs = self.softmax(self.linear(self.dropout(features)))
 
         return probs
 
