@@ -79,40 +79,40 @@ class CNN(nn.Module):
         return logits
 
 
-def training_loop(train_dataloader, dev_dataloader, model, loss_fn, optimizer, lambd):
+def training_loop(train_dataloader, dev_dataloader, model, loss_fn, optimizer, lambd, epochs):
     model.train()
     best_dev_acc = 0
-    for i, batch in enumerate(train_dataloader):
-        pred = model(batch['sentence'])
-        loss = loss_fn(pred, batch['label']) # dim of input must be 1 greater than dim of target
+    for e in range(epochs):
+        for i, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
+            pred = model(batch['sentence'])
+            loss = loss_fn(pred, batch['label']) # dim of input must be 1 greater than dim of target
 
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
-        # regularization
-        with torch.no_grad():
-            new_weights = []
-            for w in model.linear.weight.data:
-                norm = torch.linalg.norm(w)
-                if norm > lambd/2:
-                    # rescale w by (lambda/2) / norm
-                    new_w = ((lambd/2) / norm) * w
-                    new_weights.append(new_w)
-                else:
-                    new_weights.append(w)
-            ws = torch.stack(new_weights)
-            model.linear.weight.data = ws
+            # regularization
+            with torch.no_grad():
+                new_weights = []
+                for w in model.linear.weight.data:
+                    norm = torch.linalg.norm(w)
+                    if norm > lambd/2:
+                        # rescale w by (lambda/2) / norm
+                        new_w = ((lambd/2) / norm) * w
+                        new_weights.append(new_w)
+                    else:
+                        new_weights.append(w)
+                ws = torch.stack(new_weights)
+                model.linear.weight.data = ws
 
-        # checkpointing
-        if i % 100 == 0:
-            print(f"Batch: {i}")
-            dev_acc = evaluate(dev_dataloader, model)
-            print(f"Dev set accuracy: {dev_acc}")
-            if dev_acc > best_dev_acc:
-                print("Saving new best model...")
-                torch.save(model.state_dict(), "best_model.pt")
-                best_dev_acc = dev_acc
+
+        print(f"Epoch: {e}")
+        dev_acc = evaluate(dev_dataloader, model)
+        print(f"Dev set accuracy: {dev_acc}")
+        if dev_acc > best_dev_acc:
+            print("Saving new best model...")
+            torch.save(model.state_dict(), "best_model.pt")
+            best_dev_acc = dev_acc
 
 
 def evaluate(dataloader, model, load_best = False):
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     loss = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adadelta(cnn.parameters()) # TODO hyperparams
 
-    training_loop(train_loader, dev_loader, cnn, loss, optimizer, 3)
+    training_loop(train_loader, dev_loader, cnn, loss, optimizer, 3, 25)
 
     dev_acc = evaluate(dev_loader, cnn, load_best=True)
 
