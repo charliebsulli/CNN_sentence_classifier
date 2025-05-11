@@ -2,7 +2,8 @@ import gensim.downloader
 import torch
 from datasets import load_dataset
 
-from cnn import UNK_TOKEN, PADDING_TOKEN
+UNK_TOKEN = "<unk>"
+PADDING_TOKEN = "<pad>"
 
 
 def get_vocab(dataset, text_field, delim=" "):
@@ -26,11 +27,19 @@ def get_embeddings(vocab, model, embeddings_size):
     return embeddings
 
 
-if __name__ == "__main__":
+def get_trec_splits():
+    """
+    Return splits of the TREC dataset. Samples 10% of train to make a dev set.
+    """
     train = load_dataset("CogComp/trec", split="train")
-    ds = train.train_test_split(test_size=0.1, shuffle=True, seed=2)
-    train = ds["train"]
-    dev = ds["test"]
+    train_dev_split = train.train_test_split(test_size=0.1, shuffle=True, seed=2)
+    test = load_dataset("CogComp/trec", split = "test")
+
+    return train_dev_split["train"], train_dev_split["test"], test
+
+
+if __name__ == "__main__":
+    train, dev, test = get_trec_splits()
     word2vec = gensim.downloader.load("word2vec-google-news-300")
     vocab = get_vocab(train, "text")
     embeddings = get_embeddings(vocab, word2vec, 300)
